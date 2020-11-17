@@ -1,23 +1,28 @@
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 
-import javax.swing.ButtonGroup;
-import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 
@@ -30,13 +35,13 @@ public class Database
 	public final static int INTEGER_TYPE = 2;
 	public final static int CHAR_TYPE = 3;
 	
-	ArrayList<LinkedListType> database;
-	LinkedListType currentTable;
+	ArrayList<TableType> database;
+	TableType currentTable;
 	Main main;
 	
 	public Database(Main main)
 	{
-		database = new ArrayList<LinkedListType>();
+		database = new ArrayList<TableType>();
 		currentTable = null;
 		this.main = main;
 	}
@@ -57,12 +62,11 @@ public class Database
 			return;
 		}
 		
-		LinkedListType newTable = new LinkedListType(tableName);
-		
 		int fieldNumber = 0;
 		
 		boolean success = false;
 		
+		// fieldNumber 입력
 		while(!success)
 		{
 			String input = JOptionPane.showInputDialog(null, "필드의 수를 양의 정수로 입력하세요.");
@@ -101,6 +105,7 @@ public class Database
 		String[] fieldName = new String[fieldNumber];
 		int[] fieldType = new int[fieldNumber];
 		
+		// fieldName 입력
 		for(int i = 0; i < fieldNumber; i++)
 		{
 			String input = JOptionPane.showInputDialog((i + 1) + "번째 필드의 이름을 입력하세요.");
@@ -135,6 +140,7 @@ public class Database
 		panel.add(label2, BorderLayout.CENTER);
 		panel.add(comboBox, BorderLayout.SOUTH);
 		
+		// fieldType 입력
 		for(int i = 0; i < fieldNumber; i++)
 		{
 			label1.setText((i + 1) + "번째 필드의 데이터 타입을 선택해주세요.");
@@ -161,30 +167,46 @@ public class Database
 			}
 		}
 		
-		newTable.setFieldSize(fieldNumber);
-		newTable.setFieldName(fieldName);
-		newTable.setFieldType(fieldType);
+		int degree = -1;
+		
+		while(true)
+		{
+			String input = JOptionPane.showInputDialog("B+ 트리의 차수를 입력하세요.");
+			
+			try
+			{
+				degree = Integer.parseInt(input);
+				break;
+			}
+			catch(NumberFormatException e)
+			{
+				int confirm = JOptionPane.showConfirmDialog(null, "잘못된 입력입니다! 테이블 생성을 중단하시겠습니까?");
+				
+				if(confirm == JOptionPane.YES_OPTION)
+				{
+					return;
+				}
+			}
+		}
+		
+		TableType newTable = new TableType(tableName, fieldName, fieldType, fieldNumber, degree);
 		
 		this.database.add(newTable);
 		
 		main.addTableIntoTreePanel(null, newTable);
-		main.showTablePanel(null, newTable);
+		main.showTablePanel(null, newTable, newTable.recordSize, newTable.getNodeSize());
 	}
 	
 	public void enter()
 	{
-		int index = this.selectTable();
-		
-		if(index == -1)
-		{
+		if(this.currentTable == null)
 			return;
-		}
 		
-		LinkedListType table = database.get(index);
+		TableType table = this.currentTable;
 		enter(table);
 	}
 	
-	public void enter(LinkedListType table)
+	public void enter(TableType table)
 	{
 		int fieldSize = table.getFieldSize();
 		int[] fieldType = table.getFieldType();
@@ -254,7 +276,7 @@ public class Database
 		}
 		
 		table.insertData(record);
-		main.showTablePanel(null, table);
+		main.showTablePanel(null, table.getOrderedData(table.currentIndex), table.getFieldName(), table.getRecordSize(), table.currentIndex, table.getNodeSize());
 	}
 	
 	public void save()
@@ -289,7 +311,7 @@ public class Database
 		int size = this.database.size();
 		JPanel checkBoxPanel = new JPanel();
 		
-		ArrayList<LinkedListType> database = this.database;
+		ArrayList<TableType> database = this.database;
 		
 		for(int i = 0; i < size; i++)
 		{
@@ -301,7 +323,7 @@ public class Database
 		saveTablePanel.add(label, BorderLayout.NORTH);
 		saveTablePanel.add(checkBoxPanel, BorderLayout.CENTER);
 		
-		ArrayList<LinkedListType> selectedTable = new ArrayList<LinkedListType>();
+		ArrayList<TableType> selectedTable = new ArrayList<TableType>();
 		int confirm = JOptionPane.CANCEL_OPTION;
 		
 		while(confirm != JOptionPane.OK_OPTION)
@@ -340,75 +362,17 @@ public class Database
 			}
 		}
 		
-		for(LinkedListType table : selectedTable)
+		for(TableType table : selectedTable)
 		{
 			this.saveTable(savePath, table);
 		}
 	}
 	
-	public void saveTable(String path, LinkedListType table)
+	public void saveTable(String path, TableType table)
 	{
-		String[] fieldName = table.getFieldName();
-		int[] fieldTypes = table.getFieldType();
-		int fieldSize = table.getFieldSize();
-		Object[][] data = table.getDataFromObject();
-		int recordSize = table.getRecordSize();
-		path += "_" + table.getName() + ".dat"; 
-		
-		String result = table.getName() + "\n";
-		
-		for(int i = 0; i < fieldSize; i++)
-		{
-			result += fieldTypes[i];
-			
-			if(i != fieldSize - 1)
-			{
-				result += "\t";
-			}
-		}
-		
-		result += "\n";
-		
-		for(int i = 0; i < fieldSize; i++)
-		{
-			result += fieldName[i];
-			
-			if(i != fieldSize - 1)
-			{
-				result += "\t";
-			}
-		}
-		
-		result += "\n";
-		
-		for(int i = 0; i < recordSize; i++)
-		{
-			Object[] record = data[i];
-			int length = record.length;
-			
-			for(int j = 0; j < length; j++)
-			{
-				Object field = record[j];
-				result += field.toString();
-				
-				if(j != length - 1)
-				{
-					result += "\t";
-				}
-			}
-			result += "\n";
-		}
-		
 		try
 		{
-			FileOutputStream output = new FileOutputStream(path);
-			output.write(result.getBytes());
-			
-			output.close();
-		}
-		catch (FileNotFoundException e)
-		{
-			e.printStackTrace();
+			table.saveTable(path);
 		}
 		catch (IOException e)
 		{
@@ -420,8 +384,11 @@ public class Database
 	{
 		JFileChooser chooser = new JFileChooser();
 		
-		FileNameExtensionFilter filter = new FileNameExtensionFilter("Dat Files", "dat");
-		chooser.setFileFilter(filter);
+		FileNameExtensionFilter csvFilter = new FileNameExtensionFilter("CSV & TSV Files", "csv", "tsv");
+		chooser.setFileFilter(csvFilter);
+		
+		FileNameExtensionFilter datFilter = new FileNameExtensionFilter("Dat Files", "dat");
+		chooser.setFileFilter(datFilter);
 		
 		int ret = chooser.showOpenDialog(null);
 		
@@ -431,71 +398,154 @@ public class Database
 		}
 		
 		File file = chooser.getSelectedFile();
-		LinkedListType table = this.loadTable(file);
-
+		
+		TableType table = null;
+		
+		if(file.getName().contains("tsv"))
+		{
+			String tableName = JOptionPane.showInputDialog(null, "테이블 이름을 입력하세요.");
+			
+			if(tableName == null || tableName.equals(""))
+			{
+				JOptionPane.showMessageDialog(null, "데이터 로드를 취소했습니다.");
+				return;
+			}
+			
+			int degree = -1;
+			
+			while(true)
+			{
+				String degreeInput = JOptionPane.showInputDialog(null, "차수를 입력하세요.");
+				
+				try
+				{
+					degree = Integer.parseInt(degreeInput);
+					break;
+				}
+				catch(NumberFormatException e)
+				{
+					JOptionPane.showMessageDialog(null, "잘못된 입력입니다! 다시 입력하세요!");
+				}
+			}
+			
+			table = this.loadTsv(file, tableName, degree);
+		}
+		else if(file.getName().contains("dat"))
+		{
+			table = this.loadDat(file);
+		}
+		
 		if(table != null)
 		{
 			this.database.add(table);
 			main.addTableIntoTreePanel(null, table);
-			main.showTablePanel(null, table);
-			
-			JOptionPane.showMessageDialog(null, "데이터 로드를 성공적으로 마쳤습니다.");
+			main.showTablePanel(null, table, table.getRecordSize(), table.getNodeSize());
+			this.currentTable = table;
 		}
 	}
 	
-	public LinkedListType loadTable(File file)
+	public TableType loadDat(File file)
 	{
-		String result = "";
+		String path = file.getPath();
+		path = path.substring(0, path.indexOf(".dat"));
 		
 		try
 		{
-			FileReader reader = new FileReader(file);
-			int cur = 0;
-		
-			while((cur = reader.read()) != -1)
-			{
-				result += (char) cur;
-			}
+			FileInputStream fis = new FileInputStream(file);
+			ObjectInputStream ois = new ObjectInputStream(fis);
 			
-			reader.close();
+			Object objectTableName = ois.readObject();
+			Object objectFieldNames = ois.readObject();
+			Object objectFieldTypes = ois.readObject();
+			Object objectDegree = ois.readObject();
+			Object objectRoot = ois.readObject();
+			
+			String tableName = (String) objectTableName;
+			String[] fieldNames = (String[]) objectFieldNames;
+			int[] fieldTypes = (int[]) objectFieldTypes;
+			int degree = Integer.parseInt(objectDegree.toString());
+			BPNodeType root = (BPNodeType) objectRoot;
+			
+			TableType table = new TableType(tableName, fieldNames, fieldTypes, fieldTypes.length, degree);
+			table.tree.setRoot(root);
+			
+			table.loadRecords(path);
+			
+			ois.close();
+			fis.close();
+			
+			return table;
 		}
-		catch(IOException e)
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+		catch (ClassNotFoundException e)
 		{
 			e.printStackTrace();
 		}
 		
-		String[] record = result.split("\n");
+		return null;
+	}
+	
+	public TableType loadTsv(File file, String tableName, int degree)
+	{
+		String[] columns;
 		
-		String tableName = record[0];
-		if(this.hasTableName(tableName))
+		try
 		{
-			tableName += "_";
+			BufferedReader br = new BufferedReader(new FileReader(file));
+			columns = br.readLine().split("\t");
+			columns[0] = "index";
+			int length = columns.length;
+			
+			int[] dataType = new int[length];
+			
+			for(int i = 0; i < length; i++)
+			{
+				dataType[i] = STRING_TYPE;
+			}
+			
+			dataType[0] = INTEGER_TYPE;
+			dataType[4] = INTEGER_TYPE;
+			dataType[5] = DOUBLE_TYPE;
+			
+			TableType table = new TableType(tableName, columns, dataType, length, degree);
+			
+			String line = "";
+			
+			while((line = br.readLine()) != null)
+			{
+				String[] fields = line.split("\t");
+				
+				if(fields[5].equals(""))
+				{
+					fields[5] = String.valueOf(0.0);
+				}
+				
+				table.addData(fields);
+			}
+			
+			br.close();
+			
+			table.serializeRecords();
+			
+			return table;
+		}
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
 		}
 		
-		String[] fieldTypesString = record[1].split("\t");
-		int fieldSize = fieldTypesString.length;
-		int[] fieldTypes = new int[fieldSize];
-		
-		for(int i = 0; i < fieldSize; i++)
-		{
-			fieldTypes[i] = Integer.valueOf(fieldTypesString[i]);
-		}
-		
-		String[] fieldNames = record[2].split("\t");
-		int length = record.length;
-
-		LinkedListType table = new LinkedListType(tableName);
-		table.setFieldSize(fieldSize);
-		table.setFieldName(fieldNames);
-		table.setFieldType(fieldTypes);
-		
-		for(int i = 3; i < length; i++)
-		{
-			Object[] objectRecord = record[i].split("\t");
-			table.insertData(objectRecord);
-		}
-		
-		return table;
+		return null;
 	}
 	
 	public void browse(JTable tablePanel)
@@ -507,37 +557,38 @@ public class Database
 			return;
 		}
 		
-		LinkedListType table = database.get(index);
-		main.showTablePanel(tablePanel, table);
+		TableType table = database.get(index);
+		main.showTablePanel(tablePanel, table, table.getRecordSize(), table.getNodeSize());
 	}
 	
 	public void search()
 	{
-		int index = this.selectTable();
+		TableType table = this.currentTable;
 		
-		if(index == -1)
+		if(table == null)
 		{
 			return;
 		}
 		
-		LinkedListType table = database.get(index);
 		ArrayList<Object[]> result = this.search(table);
+		
 		if(result == null)
 		{
 			return;
 		}
 		
 		String[] fieldName = table.getFieldName();
-			
+		
 		this.printTableFromData(result, fieldName);
 	}
 	
-	public ArrayList<Object[]> search(LinkedListType table)
+	public ArrayList<Object[]> search(TableType table)
 	{
 		String[] fieldName = table.getFieldName();
 		int[] fieldType = table.getFieldType();
 		
-		int select = this.selectField(table, "검색 기준 필드를 선택하세요.");
+//		int select = this.selectField(table, "검색 기준 필드를 선택하세요.");
+		int select = 0;
 		
 		if (select != -1)
 		{
@@ -578,7 +629,6 @@ public class Database
 				}
 			}
 			
-			
 			ArrayList<Object[]> result = this.search(table, input, index);
 			
 			return result;
@@ -589,48 +639,30 @@ public class Database
 		}
 	}
 	
-	public ArrayList<Object[]> search(LinkedListType table, String key, int index)
+	public ArrayList<Object[]> search(TableType table, String key, int index)
 	{
-		Object[][] data = table.getDataFromObject();
+		Object[] data = table.searchData(key, index);
 		
-		int size = table.getRecordSize();
-		
-		ArrayList<Object[]> result = new ArrayList<Object[]>();
-		
-		for(int i = 0; i < size; i++)
+		if(data != null)
 		{
-			Object[] record = data[i];
-			String object = String.valueOf(record[index]);
+			ArrayList<Object[]> result = new ArrayList<Object[]>();
+			result.add(data);
 			
-			if(object.contains(key))
-			{
-				result.add(record);
-			}
-			else
-			{
-				continue;
-			}
+			return result;
 		}
 		
-		return result;
+		return null;
 	}
 	
-	public void modify(int selectedRow)
+	public void modify(Object key)
 	{
-		LinkedListType table = this.currentTable;
-		
-		Object[] record = table.getRecord(selectedRow).getData();
-		
-		if(record == null)
-		{
-			JOptionPane.showMessageDialog(null, "잘못된 접근입니다.");
-			return;
-		}
+		TableType table = this.currentTable;
 		
 		int fieldIndex = this.selectField(table, "수정할 필드를 선택해주세요.");
-			
-		if(fieldIndex == -1)
+		
+		if(fieldIndex == 0)
 		{
+			JOptionPane.showMessageDialog(null, "PK는 수정이 불가능합니다.");
 			return;
 		}
 		
@@ -656,25 +688,28 @@ public class Database
 			
 			try
 			{
-				switch(table.getFieldType()[fieldIndex])
+				int[] fieldType = table.getFieldType();
+				
+				switch(fieldType[fieldIndex])
 				{
 				case STRING_TYPE:
-					record[fieldIndex] = newData;
+					table.modifyRecord(key, fieldIndex, newData);
 					failure = false;
 					break;
 				case DOUBLE_TYPE:
-					double tempData = Double.parseDouble(newData);
-					record[fieldIndex] = String.valueOf(tempData);
+					double tempDouble = Double.parseDouble(newData);
+					table.modifyRecord(key, fieldIndex, tempDouble);
 					failure = false;
 					break;
 				case INTEGER_TYPE:
-					Integer.parseInt(newData);
-					record[fieldIndex] = newData;
+					int tempInt = Integer.parseInt(newData);
+					table.modifyRecord(key, fieldIndex, tempInt);
 					failure = false;
 					break;
 				case CHAR_TYPE:
-					if(newData.length() > 1) throw new NumberFormatException();
-					record[fieldIndex] = newData;
+					if(newData.toCharArray().length > 1) throw new NumberFormatException();
+					char tempChar = newData.charAt(0);
+					table.modifyRecord(key, fieldIndex, tempChar);
 					failure = false;
 					break;
 				}
@@ -685,48 +720,51 @@ public class Database
 			}
 		}
 		
-		main.showTablePanel(null, table);
+		main.showTablePanel(null, table, table.getRecordSize(), table.getNodeSize());
 	}
 	
-	public int printTableFromData(ArrayList<Object[]> data, String columnNames[])
+	public void printTableFromData(ArrayList<Object[]> data, String columnNames[])
 	{
-		Object[][] rowData;
+		if(data == null)
+		{
+			JOptionPane.showMessageDialog(null, "데이터를 찾을 수 없습니다!");
+			return;
+		}
 		
-		try
-		{
-			rowData = new Object[data.size()][data.get(0).length];
-		}
-		catch(IndexOutOfBoundsException e)
-		{
-			JOptionPane.showMessageDialog(null, "데이터가 없습니다.");
-			return -1;
-		}
-		catch(NullPointerException ne)
-		{
-			JOptionPane.showMessageDialog(null, "데이터 검색이 취소되었습니다.");
-			return -1;
-		}
+		JTextPane textPane = new JTextPane();
+		
+		StringBuilder sb = new StringBuilder("");
 		
 		for(int i = 0; i < data.size(); i++)
 		{
-			rowData[i] = data.get(i);
+			for(int j = 0; j < data.get(i).length; j++)
+			{
+				sb.append("[ " + columnNames[j] + " ]:\t");
+				
+				String temp = data.get(i)[j].toString();
+				sb.append(temp);
+				sb.append("\n");
+			}
 		}
 		
-		DefaultTableModel model = new DefaultTableModel(rowData, columnNames);
-		JTable table = new JTable(model);
-		JScrollPane panel = new JScrollPane(table);
+		textPane.setText(sb.toString());
+		textPane.setEditable(false);
+		textPane.setPreferredSize(new Dimension(main.mainFrame.getWidth() / 2, main.mainFrame.getHeight() / 2));
+		textPane.setFont(new Font("맑은 고딕", Font.PLAIN, 20));
+		
+		JScrollPane panel = new JScrollPane(textPane);
+		panel.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+		panel.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		
 		JOptionPane.showMessageDialog(null, panel);
-		
-		return table.getSelectedRow();
 	}
 	
-	public void delete(int[] selectedRows)
+	public void delete(Object[] deleteKeys)
 	{
-		int rowsCount = selectedRows.length;
-		LinkedListType table = this.currentTable;
+		TableType table = this.currentTable;
+		int length = deleteKeys.length;
 		
-		int confirm = JOptionPane.showConfirmDialog(null, rowsCount + "개의 데이터를 정말로 삭제하시겠습니까?", "Confirm", JOptionPane.OK_CANCEL_OPTION);
+		int confirm = JOptionPane.showConfirmDialog(null, length + "개의 데이터를 정말로 삭제하시겠습니까?", "Confirm", JOptionPane.OK_CANCEL_OPTION);
 		
 		if(confirm != JOptionPane.OK_OPTION)
 		{
@@ -734,24 +772,15 @@ public class Database
 			return;
 		}
 		
-		for(int i = 0; i < rowsCount; i++)
+		for(int i = 0; i < length; i++)
 		{
-			int index = selectedRows[i];
-			table.removeNode(table.getRecord(index));
-			
-			rowsCount--;
-			i--;
-			
-			if(rowsCount == 0)
-			{
-				break;
-			}
+			table.removeNode(deleteKeys[i]);
 		}
 		
-		main.showTablePanel(null, table);
+		main.showTablePanel(null, table.getOrderedData(table.currentIndex), table.getFieldName(), table.getRecordSize(), table.currentIndex, table.getNodeSize());
 	}
 	
-	public int selectField(LinkedListType table, String message)
+	public int selectField(TableType table, String message)
 	{
 		JPanel panel = new JPanel();
 		JLabel label = new JLabel(message);
@@ -854,7 +883,7 @@ public class Database
 		}
 	}
 	
-	public LinkedListType sort()
+	public void sort()
 	{
 		int fieldIndex = -1;
 		
@@ -863,84 +892,112 @@ public class Database
 			if(currentTable == null)
 			{
 				JOptionPane.showMessageDialog(null, "먼저 테이블을 생성해주세요!");
-				return null;
+				return;
 			}
 			
 			fieldIndex = this.selectField(currentTable, "기준이 될 필드를 선택해주세요.");
 			
 			if(fieldIndex == -1)
 			{
-				return null;
+				return;
 			}
 		}
 		
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
-		JLabel label = new JLabel("정렬 방향을 선택해주세요.");
+		Object[][] rowData = this.currentTable.getOrderedData(0);
+		this.currentTable.currentIndex = 0;
+		this.currentTable.currentOrderedIndex = fieldIndex;
+		Object[] columns = this.currentTable.getFieldName();
+		int recordSize = this.currentTable.recordSize;
 		
-		JRadioButton ascendButton = new JRadioButton("오름차순");
-		JRadioButton descendButton = new JRadioButton("내림차순");
-		
-		ButtonGroup group = new ButtonGroup();
-		
-		group.add(ascendButton);
-		group.add(descendButton);
-		
-		ascendButton.setSelected(true);
-		descendButton.setSelected(false);
-		
-		panel.add(label, BorderLayout.NORTH);
-		
-		JPanel buttonPanel = new JPanel();
-		buttonPanel.add(ascendButton);
-		buttonPanel.add(descendButton);
-		
-		panel.add(buttonPanel);
-		
-		int confirm = JOptionPane.CANCEL_OPTION;
-		
-		boolean ascend = false;
-		
-		while(confirm != JOptionPane.OK_OPTION)
+		main.showTablePanel(null, rowData, columns, recordSize, this.currentTable.currentIndex, this.currentTable.getNodeSize());
+	}
+	
+	public void next()
+	{
+		if(this.currentTable == null)
 		{
-			confirm = JOptionPane.showConfirmDialog(null, panel, "Confirm", JOptionPane.OK_CANCEL_OPTION);
-			
-			if(confirm == JOptionPane.OK_OPTION)
-			{
-				if(ascendButton.isSelected())
-				{
-					ascend = true;
-				}
-				else
-				{
-					ascend = false;
-				}
-			}
-			else
-			{
-				int cancelConfirm = JOptionPane.showConfirmDialog(null, "정렬을 취소하시겠습니까?", "Confirm", JOptionPane.OK_CANCEL_OPTION);
-				
-				if(cancelConfirm == JOptionPane.OK_OPTION)
-				{
-					return null;
-				}
-				else
-				{
-					continue;
-				}
-			}
+			JOptionPane.showMessageDialog(null, "테이블을 우선 정의해주세요!");
+			return;
 		}
 		
-		currentTable.sortNode(fieldIndex, ascend);
+		TableType table = this.currentTable;
 		
-		return currentTable;
+		if(table.currentIndex < table.tree.getLeafNodeSize())
+			table.currentIndex++;
+		
+		Object[][] rowData = table.getOrderedData(table.currentIndex);
+		Object[] columns = table.getFieldName();
+		int recordSize = table.recordSize;
+		
+		main.showTablePanel(null, rowData, columns, recordSize, table.currentIndex, table.getNodeSize());
+	}
+	
+	public void prev()
+	{
+		if(this.currentTable == null)
+		{
+			JOptionPane.showMessageDialog(null, "테이블을 우선 정의해주세요!");
+			return;
+		}
+		
+		TableType table = this.currentTable;
+		
+		if(table.currentIndex > 0)
+			table.currentIndex--;
+		
+		Object[][] rowData = table.getOrderedData(table.currentIndex);
+		Object[] columns = table.getFieldName();
+		
+		main.showTablePanel(null, rowData, columns, table.recordSize, table.currentIndex, table.getNodeSize());
+	}
+	
+	public void move()
+	{
+		if(this.currentTable == null)
+		{
+			JOptionPane.showMessageDialog(null, "테이블을 우선 정의해주세요.");
+			return;
+		}
+		
+		TableType table = this.currentTable;
+		int movePage;
+		
+		while(true)
+		{
+			String input = JOptionPane.showInputDialog(null, "이동하실 페이지를 입력하세요.");
+			
+			try
+			{
+				movePage = Integer.parseInt(input);
+				
+				break;
+			}
+			catch(NumberFormatException e)
+			{
+				JOptionPane.showMessageDialog(null, "숫자가 올바르지 않습니다! 다시 시도해주세요!");
+				return;
+			}
+		}
+
+		int length = table.getNodeSize();
+		
+		if(movePage > length)
+			movePage = length;
+		else if(movePage < 0)
+			movePage = 0;
+		
+		Object[][] rowData = table.getOrderedData(movePage);
+		Object[] columns = table.getFieldName();
+		
+		main.showTablePanel(null, rowData, columns, table.recordSize, movePage, table.getNodeSize());
+		table.currentIndex = movePage;
 	}
 	
 	public boolean hasTableName(String tableName)
 	{
-		ArrayList<LinkedListType> database = this.database;
+		ArrayList<TableType> database = this.database;
 		
-		for(LinkedListType table: database)
+		for(TableType table: database)
 		{
 			if(tableName.equals(table.getName()))
 			{

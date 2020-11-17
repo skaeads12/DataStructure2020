@@ -9,6 +9,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Enumeration;
 
@@ -22,6 +23,7 @@ import javax.swing.event.TableColumnModelListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import javax.swing.table.TableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 
@@ -138,7 +140,7 @@ public class Main extends JFrame
 			public void actionPerformed(ActionEvent e)
 			{
 				int selectedRow = tablePanel.getSelectedRow();
-			
+				
 				if(selectedRow == -1)
 				{
 					JOptionPane.showMessageDialog(null, "수정할 데이터를 선택하고 진행해주세요.");
@@ -146,7 +148,8 @@ public class Main extends JFrame
 				}
 				else
 				{
-					database.modify(selectedRow);
+					Object key = tablePanel.getModel().getValueAt(selectedRow, 0);
+					database.modify(key);
 				}
 			}
 		});
@@ -164,7 +167,15 @@ public class Main extends JFrame
 				}
 				else
 				{
-					database.delete(selectedRows);
+					Object[] deleteKeys = new Object[selectedRows.length];
+					TableModel model = tablePanel.getModel();
+					
+					for(int i = 0; i < selectedRows.length; i++)
+					{
+						deleteKeys[i] = model.getValueAt(selectedRows[i], 0);
+						
+					}
+					database.delete(deleteKeys);
 				}
 			}
 		});
@@ -173,12 +184,9 @@ public class Main extends JFrame
 		{
 			public void actionPerformed(ActionEvent e)
 			{
-				LinkedListType table = database.sort();
-				
-				if(table != null)
-				{
-					showTablePanel(tablePanel, table);
-				}
+				long start = System.currentTimeMillis();
+				database.sort();
+				System.out.println("실행 시간: " + (System.currentTimeMillis() - start) / 1000.0);
 			}
 		});
 		
@@ -189,8 +197,8 @@ public class Main extends JFrame
 		mainMenu.add(searchItem);
 		mainMenu.add(modifyItem);
 		mainMenu.add(deleteItem);
-		mainMenu.addSeparator();
-		mainMenu.add(sortItem);
+//		mainMenu.addSeparator();
+//		mainMenu.add(sortItem);
 		
 		JMenu fileMenu = new JMenu("File");
 		JMenuItem saveItem = new JMenuItem("Save");
@@ -208,15 +216,57 @@ public class Main extends JFrame
 		{
 			public void actionPerformed(ActionEvent e)
 			{
+				long start = System.currentTimeMillis();
 				database.load();
+				System.out.println("Load: " + (System.currentTimeMillis() - start) / 1000.0);
 			}
 		});
 		
 		fileMenu.add(saveItem);
 		fileMenu.add(loadItem);
 		
+		JMenu controlMenu = new JMenu("Control");
+		JMenuItem nextItem = new JMenuItem("Next");
+		JMenuItem prevItem = new JMenuItem("Prev");
+		JMenuItem moveItem = new JMenuItem("Move");
+		
+		nextItem.addActionListener(new ActionListener()
+		{
+			public void actionPerformed(ActionEvent e)
+			{
+				long start = System.currentTimeMillis();
+				database.next();
+				System.out.println("Next: " + (System.currentTimeMillis() - start) / 1000.0);
+			}
+		});
+		
+		prevItem.addActionListener(new ActionListener()
+		{
+			public void actionPerformed(ActionEvent e)
+			{
+				long start = System.currentTimeMillis();
+				database.prev();
+				System.out.println("Prev: " + (System.currentTimeMillis() - start) / 1000.0);
+			}
+		});
+		
+		moveItem.addActionListener(new ActionListener()
+		{
+			public void actionPerformed(ActionEvent e)
+			{
+				long start = System.currentTimeMillis();
+				database.move();
+				System.out.println("Move: " + (System.currentTimeMillis() - start) / 1000.0);
+			}
+		});
+		
+		controlMenu.add(nextItem);
+		controlMenu.add(prevItem);
+		controlMenu.add(moveItem);
+
 		menuBar.add(mainMenu);
 		menuBar.add(fileMenu);
+		menuBar.add(controlMenu);
 		
 		return menuBar;
 	}
@@ -233,7 +283,7 @@ public class Main extends JFrame
 		return treeScroll;
 	}
 	
-	public void addTableIntoTreePanel(JTree tree, LinkedListType table)
+	public void addTableIntoTreePanel(JTree tree, TableType table)
 	{
 		if(tree == null)
 		{
@@ -273,6 +323,11 @@ public class Main extends JFrame
 		JTable table = new JTable(model);
 		this.tablePanel = table;
 		
+		table.setFont(new Font("맑은 고딕", Font.PLAIN, 16));
+		table.setRowHeight(20);
+		table.setShowHorizontalLines(true);
+		table.setShowVerticalLines(true);
+		
 		JScrollPane tableScroll = new JScrollPane(table);
 		
 		this.setStateBar(" " + 0 + " 개의 레코드가 발견되었습니다.");
@@ -280,7 +335,7 @@ public class Main extends JFrame
 		return tableScroll;
 	}
 	
-	public void showTablePanel(JTable jTable, LinkedListType table)
+	public void showTablePanel(JTable jTable, TableType table, int recordSize, int totalPage)
 	{
 		if(jTable == null)
 		{
@@ -288,14 +343,29 @@ public class Main extends JFrame
 		}
 		
 		Object[] columnNames = table.getFieldName();
-		Object[][] rowData = table.getDataFromObject();
+		Object[][] rowData = table.getOrderedData(0);
 		
 		DefaultTableModel model = new DefaultTableModel(rowData, columnNames);
 		jTable.setModel(model);
 		jTable.updateUI();
 		
 		database.currentTable = table;
-		this.setStateBar(" " + table.recordSize + " 개의 레코드가 발견되었습니다.");
+		this.setStateBar(" " + recordSize + " 개의 레코드가 발견되었습니다. [ 0 / " + totalPage + " ] ");
+	}
+	
+	public void showTablePanel(JTable jTable, Object[][] rowData, Object[] columnNames, int recordSize, int page, int totalPage)
+	{
+		if(jTable == null)
+		{
+			jTable = this.tablePanel;
+		}
+		
+		DefaultTableModel model = new DefaultTableModel(rowData, columnNames);		
+		
+		jTable.setModel(model);
+		jTable.updateUI();
+		
+		this.setStateBar(" " + recordSize + " 개의 레코드가 발견되었습니다. [ " + page + " / " + totalPage + " ] ");
 	}
 	
 	public JPanel initStateBar(String status)
